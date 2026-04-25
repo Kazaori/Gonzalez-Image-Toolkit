@@ -10,6 +10,15 @@ from PyQt5.QtWidgets import (QFileDialog, QMessageBox, QGroupBox, QTabWidget,
 from matplotlib import pyplot as plt
 
 # ==================== 核心算法模块 ====================
+def resource_path(relative_path):
+    """ 获取各种资源的绝对路径，兼容 PyInstaller 的单文件模式 """
+    try:
+        # PyInstaller 打包后的临时文件夹路径
+        base_path = sys._MEIPASS
+    except Exception:
+        # 正常调试时的当前文件夹路径
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 def cv2_to_qimage(img):
     """
@@ -216,15 +225,18 @@ class FusedImageTool(QtWidgets.QWidget):
         self.setWindowTitle("数字图像处理实验系统 (基于冈萨雷斯第4版)")
         self.resize(1300, 800)
         
-        if os.path.exists('icon.ico'):
-            self.setWindowIcon(QtGui.QIcon('icon.ico'))
-        
+        # --- 修复的缩进区域开始 ---
+        icon_full_path = resource_path('icon.ico')
+        if os.path.exists(icon_full_path):
+            self.setWindowIcon(QtGui.QIcon(icon_full_path))
+            
         self.img_first_loaded = None
         self.history =[]
         self.img_base = None
         self.img_proc = None
         
         self.init_ui()
+        # --- 修复的缩进区域结束 ---
 
     def init_ui(self):
         main_layout = QHBoxLayout(self)
@@ -346,7 +358,7 @@ class FusedImageTool(QtWidgets.QWidget):
         lay2.addWidget(create_reset_btn(reset_t2))
         tabs.addTab(tab2, "几何变换")
         
-        # [功能组 3: 空间域复原与滤波]
+        #[功能组 3: 空间域复原与滤波]
         tab3 = QtWidgets.QWidget(); lay3 = QVBoxLayout(tab3)
         self.combo_noise = QtWidgets.QComboBox()
         self.combo_noise.addItems(['高斯噪声 (gaussian)', '椒盐噪声 (salt_pepper)', '斑点噪声 (speckle)', '泊松噪声 (poisson)'])
@@ -374,7 +386,7 @@ class FusedImageTool(QtWidgets.QWidget):
         lay3.addWidget(create_reset_btn(reset_t3))
         tabs.addTab(tab3, "加噪与空域")
         
-        # [功能组 4: 频率域增强]
+        #[功能组 4: 频率域增强]
         tab4 = QtWidgets.QWidget(); lay4 = QVBoxLayout(tab4)
         self.combo_freq_mode = QtWidgets.QComboBox(); self.combo_freq_mode.addItems(['低通滤波 (lowpass)', '高通滤波 (highpass)'])
         self.combo_freq_type = QtWidgets.QComboBox(); self.combo_freq_type.addItems(['理想滤波 (ideal)', '高斯滤波 (gaussian)', '巴特沃斯滤波 (butterworth)'])
