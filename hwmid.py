@@ -341,7 +341,7 @@ class FusedImageTool(QtWidgets.QWidget):
         lay2.addWidget(self.chk_flip_h); lay2.addWidget(self.chk_flip_v)
         
         lay2.addWidget(QtWidgets.QLabel("<hr><b>仿射变换</b>"))
-        self.spin_rot = QtWidgets.QSpinBox(); self.spin_rot.setRange(-360, 360); self.spin_rot.setValue(45)
+        self.spin_rot = QtWidgets.QSpinBox(); self.spin_rot.setRange(-360, 360); self.spin_rot.setValue(90)
         self.spin_scale = QtWidgets.QDoubleSpinBox(); self.spin_scale.setRange(0.1, 5.0); self.spin_scale.setValue(1.0); self.spin_scale.setSingleStep(0.1)
         self.spin_tx = QtWidgets.QSpinBox(); self.spin_tx.setRange(-1000, 1000); self.spin_tx.setValue(0)
         self.spin_ty = QtWidgets.QSpinBox(); self.spin_ty.setRange(-1000, 1000); self.spin_ty.setValue(0)
@@ -354,7 +354,7 @@ class FusedImageTool(QtWidgets.QWidget):
         btn_geo.clicked.connect(self.on_geo)
         lay2.addWidget(btn_geo)
         lay2.addStretch()
-        def reset_t2(): self.spin_rot.setValue(45); self.spin_scale.setValue(1.0); self.spin_tx.setValue(0); self.spin_ty.setValue(0); self.chk_flip_h.setChecked(False); self.chk_flip_v.setChecked(False)
+        def reset_t2(): self.spin_rot.setValue(90); self.spin_scale.setValue(1.0); self.spin_tx.setValue(0); self.spin_ty.setValue(0); self.chk_flip_h.setChecked(False); self.chk_flip_v.setChecked(False)
         lay2.addWidget(create_reset_btn(reset_t2))
         tabs.addTab(tab2, "几何变换")
         
@@ -540,18 +540,35 @@ class FusedImageTool(QtWidgets.QWidget):
         show_histograms_comparision(self.img_base, proc)
 
     def on_geo(self):
-        """解析几何变换参数。"""
+        """解析几何变换参数 (包含智能画布边界扩展)"""
         def _geo(img):
+            # 1. 镜像操作
             if self.chk_flip_h.isChecked(): img = cv2.flip(img, 1)
             if self.chk_flip_v.isChecked(): img = cv2.flip(img, 0)
             
             deg, sc = self.spin_rot.value(), self.spin_scale.value()
             tx, ty = self.spin_tx.value(), self.spin_ty.value()
+            
             h, w = img.shape[:2]
-            M = cv2.getRotationMatrix2D((w / 2, h / 2), deg, sc)
-            M[0, 2] += tx; M[1, 2] += ty
-            # 边界点补充策略：采用纯黑填充(BORDER_CONSTANT)
-            return cv2.warpAffine(img, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
+            
+            # 2. 获取基于原图中心的初始仿射矩阵
+            M = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), deg, sc)
+            
+            # 3. 计算旋转后包围盒 (Bounding Box) 的新宽度和新高度
+            cos_a = np.abs(M[0, 0])
+            sin_a = np.abs(M[0, 1])
+            new_w = int((h * sin_a) + (w * cos_a))
+            new_h = int((h * cos_a) + (w * sin_a))
+            
+            # 4. 调整仿射矩阵的平移部分，使图像保持在新画布正中心，并叠加用户的手动平移
+            M[0, 2] += (new_w / 2.0) - (w / 2.0) + tx
+            M[1, 2] += (new_h / 2.0) - (h / 2.0) + ty
+            
+            # 5. 执行变换，传入新的自适应尺寸
+            return cv2.warpAffine(img, M, (new_w, new_h), 
+                                  flags=cv2.INTER_LINEAR, 
+                                  borderMode=cv2.BORDER_CONSTANT, 
+                                  borderValue=(0, 0, 0))
         self.apply_filter(_geo)
 
     def on_noise(self):
