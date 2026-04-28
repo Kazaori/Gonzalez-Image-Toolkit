@@ -310,7 +310,7 @@ class FusedImageTool(QtWidgets.QWidget):
         grp_proc = QGroupBox("处理结果")
         lay_proc = QVBoxLayout(); self.view_proc = SyncGraphicsView(); lay_proc.addWidget(self.view_proc); grp_proc.setLayout(lay_proc)
         
-        # 通过设置 stretch=1，强制左右两个 GroupBox 平均瓜分显示区域，彻底杜绝尺寸挤占现象
+        # 通过设置 stretch=1，强制左右两个 GroupBox 平均分配显示区域，彻底杜绝尺寸挤占现象
         display_layout.addWidget(grp_orig, 1)
         display_layout.addWidget(grp_proc, 1)
         left_layout.addLayout(display_layout)
