@@ -1,7 +1,3 @@
----
-puppeteer:
-  printBackground: true
----
 # 数字图像处理实验系统 (DIP Lab System)
 
 基于 冈萨雷斯《数字图像处理（第四版）》核心理论开发的专业级图像处理教学与实验软件。
