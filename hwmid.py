@@ -10,19 +10,22 @@ from PyQt5.QtWidgets import (QFileDialog, QMessageBox, QGroupBox, QTabWidget,
 from matplotlib import pyplot as plt
 
 # ==================== 核心算法模块 ====================
+
 def resource_path(relative_path):
-    """ 获取各种资源的绝对路径，兼容 PyInstaller 的单文件模式 """
+    """
+    资源路径解析。
+    提供对 PyInstaller 单文件打包模式下临时解压目录（_MEIPASS）的兼容支持。
+    """
     try:
-        # PyInstaller 打包后的临时文件夹路径
         base_path = sys._MEIPASS
     except Exception:
-        # 正常调试时的当前文件夹路径
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
 def cv2_to_qimage(img):
     """
-    将 NumPy 图像矩阵转换为 PyQt QImage 用于前端显示。
+    矩阵格式转换。
+    将底层计算使用的 NumPy 矩阵转换为 PyQt 前端渲染所需的 QImage 格式，并处理通道排列。
     """
     if img is None: return None
     if img.ndim == 2:
@@ -37,8 +40,8 @@ def cv2_to_qimage(img):
 
 def plot_histogram_on_ax(ax, img, title, mode='gray'):
     """
-    在 Matplotlib 子图上绘制直方图。
-    对应《数字图像处理（第四版）》第3.3节 直方图处理。
+    基于 Matplotlib 的直方图数据绘制函数。
+    对应《数字图像处理（第四版）》第 3.3 节 直方图处理的基本概念。
     """
     ax.set_title(title, fontdict={'fontsize': 11})
     if mode == 'gray':
@@ -53,7 +56,8 @@ def plot_histogram_on_ax(ax, img, title, mode='gray'):
 
 def show_histograms_comparision(img_orig, img_proc, title1="原图直方图 (Original)", title2="处理后直方图 (Processed)"):
     """
-    自适应对比直方图画布。对于彩色图像构建 2x2 矩阵同时显示明度和 RGB 独立通道分布。
+    构建直方图可视化面板。
+    根据图像通道深度自适应生成 1x2 (单灰度) 或 2x2 (灰度与 RGB 分离) 的统计分布对比图。
     """
     if img_orig is None or img_proc is None: return
     
@@ -79,7 +83,8 @@ def show_histograms_comparision(img_orig, img_proc, title1="原图直方图 (Ori
 def histogram_equalize(img):
     """
     全局直方图均衡化。对应《数字图像处理（第四版）》3.3.1节。
-    注：彩色图像通过转换至 YUV 空间仅对 Y(明度) 通道进行均衡化，避免色彩严重偏移。
+    通过累积分布函数(CDF)平坦化概率密度，实现自适应全局对比度提升。
+    注：彩色图像在 YUV 色彩空间仅针对明度(Y)分量处理，以维持色相恒定。
     """
     if img.ndim == 3:
         img_yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
@@ -89,8 +94,8 @@ def histogram_equalize(img):
 
 def clahe_enhance(img, clip=2.0, tile=(8,8)):
     """
-    局部直方图处理（对比度受限的自适应直方图均衡化，CLAHE）。
-    对应《数字图像处理（第四版）》3.3.3节 局部直方图处理。
+    限制对比度的自适应直方图均衡化 (CLAHE)。对应《数字图像处理（第四版）》3.3.3节。
+    基于局部空间网格限制累积函数的斜率，以抑制均质区域的噪声放大现象。
     """
     clahe = cv2.createCLAHE(clipLimit=clip, tileGridSize=tile)
     if img.ndim == 3:
@@ -102,15 +107,15 @@ def clahe_enhance(img, clip=2.0, tile=(8,8)):
 def gamma_correction(img, gamma=1.0):
     """
     幂律（伽马）变换。对应《数字图像处理（第四版）》3.2.3节。
-    公式：s = c * r^gamma。基于查找表 (LUT) 实现以提升运算效率。
+    基于 s = c * r^gamma 的指数映射。通过预计算 256 级查找表 (LUT) 加速离散灰度级映射。
     """
     table = np.array([((i / 255.0) ** gamma) * 255 for i in np.arange(256)]).astype("uint8")
     return cv2.LUT(img, table)
 
 def add_noise(img, mode='gaussian', var=10, amount=0.05):
     """
-    图像加噪模型。对应《数字图像处理（第四版）》5.2.1节 噪声的空间和频率特性。
-    支持高斯噪声、脉冲(椒盐)噪声、斑点噪声、泊松噪声。
+    空间退化/加噪模型。对应《数字图像处理（第四版）》5.2.1节 噪声的空间和频率特性。
+    通过合成高斯(Gaussian)、脉冲(Salt-Pepper)等概率密度函数(PDF)扰动图像矩阵。
     """
     if img is None: return img
     out = img.copy().astype(np.float32)
@@ -133,22 +138,18 @@ def add_noise(img, mode='gaussian', var=10, amount=0.05):
 
 def frequency_filter(img, mode='lowpass', ftype='gaussian', cutoff=30, order=2):
     """
-    频率域滤波。对应《数字图像处理（第四版）》第4.7节(低通)及第4.8节(高通)。
-    包含理想滤波器 (ILPF/IHPF)、巴特沃斯滤波器 (BLPF/BHPF) 和 高斯滤波器 (GLPF/GHPF)。
+    频率域滤波。对应《数字图像处理（第四版）》4.7节至4.8节。
+    对二维傅里叶频域构建滤波器传递函数 H(u,v)，执行频域相乘后再通过逆变换重建空间域图像。
     """
     is_color = (img.ndim == 3)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32) if is_color else img.astype(np.float32)
     rows, cols = gray.shape
     crow, ccol = rows // 2, cols // 2
     
-    # 傅里叶变换及零频分量中心化
     dft_shift = np.fft.fftshift(np.fft.fft2(gray))
-    
-    # 构造频率域网格，计算各点到频率中心的距离 D(u, v)
     u, v = np.meshgrid(np.arange(-ccol, cols - ccol), np.arange(-crow, rows - crow))
     D = np.sqrt(u**2 + v**2)
     
-    # 生成传递函数 H(u,v)
     if ftype == 'ideal':
         H = np.zeros_like(D)
         if mode == 'lowpass': H[D <= cutoff] = 1
@@ -156,11 +157,10 @@ def frequency_filter(img, mode='lowpass', ftype='gaussian', cutoff=30, order=2):
     elif ftype == 'gaussian':
         if mode == 'lowpass': H = np.exp(-(D**2) / (2 * (cutoff**2)))
         else: H = 1 - np.exp(-(D**2) / (2 * (cutoff**2)))
-    else: # butterworth
+    else: 
         if mode == 'lowpass': H = 1 / (1 + (D / (cutoff + 1e-10))**(2 * order))
         else: H = 1 / (1 + (cutoff / (D + 1e-10))**(2 * order))
         
-    # 阵列相乘后逆变换
     img_back = np.abs(np.fft.ifft2(np.fft.ifftshift(dft_shift * H)))
     img_back = np.clip(img_back, 0, 255).astype(np.uint8)
     return cv2.cvtColor(img_back, cv2.COLOR_GRAY2BGR) if is_color else img_back
@@ -169,7 +169,8 @@ def frequency_filter(img, mode='lowpass', ftype='gaussian', cutoff=30, order=2):
 
 class SaveConfigDialog(QDialog):
     """
-    图像导出属性配置对话框。控制输出分辨率(DPI)及压缩质量。
+    图像导出参数配置对话框。
+    用于设定图像的打印分辨率(DPI)及联合图像专家组(JPEG)标准的压缩品质。
     """
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -201,21 +202,33 @@ class SaveConfigDialog(QDialog):
 
 class SyncGraphicsView(QGraphicsView):
     """
-    提供平移与缩放功能的增强型图形视图组件。
+    基于 QGraphicsView 的交互式渲染视口。
+    屏蔽了物理滚动条显示，重写了鼠标点击事件序列以支持活动窗口的无缝拦截与焦点切换。
     """
+    viewClicked = QtCore.pyqtSignal(object)
+
     def __init__(self):
         super().__init__()
         self.scene = QGraphicsScene(self)
         self.setScene(self.scene)
         self.pixmap_item = QtWidgets.QGraphicsPixmapItem()
         self.scene.addItem(self.pixmap_item)
+        
+        # 隐藏滚动条以维持界面的视觉纯净，同时保持拖拽响应能力
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setDragMode(QGraphicsView.ScrollHandDrag)
-        self.setBackgroundBrush(QtGui.QBrush(QtGui.QColor("#2e2e2e")))
+        
+        self.setStyleSheet("border: 2px solid transparent; background-color: #2e2e2e;")
         self.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
 
     def set_image(self, qpixmap):
         self.pixmap_item.setPixmap(qpixmap)
         self.scene.setSceneRect(QtCore.QRectF(qpixmap.rect()))
+
+    def mousePressEvent(self, event):
+        self.viewClicked.emit(self)
+        super().mousePressEvent(event)
 
 # ==================== 主系统界面 ====================
 
@@ -225,7 +238,6 @@ class FusedImageTool(QtWidgets.QWidget):
         self.setWindowTitle("数字图像处理实验系统 (基于冈萨雷斯第4版)")
         self.resize(1300, 800)
         
-        # --- 修复的缩进区域开始 ---
         icon_full_path = resource_path('icon.ico')
         if os.path.exists(icon_full_path):
             self.setWindowIcon(QtGui.QIcon(icon_full_path))
@@ -235,14 +247,19 @@ class FusedImageTool(QtWidgets.QWidget):
         self.img_base = None
         self.img_proc = None
         
+        self.sync_mode = True
+        self.is_syncing_scroll = False
+        
         self.init_ui()
-        # --- 修复的缩进区域结束 ---
+        
+        self.active_view = self.view_orig
+        self.update_active_view_style()
 
     def init_ui(self):
         main_layout = QHBoxLayout(self)
         left_layout = QVBoxLayout()
         
-        # ---------------- 顶部工具栏 ----------------
+        # ---------------- 顶部控制台 ----------------
         btn_layout = QHBoxLayout()
         btn_load = QtWidgets.QPushButton("📂 加载图像")
         btn_save = QtWidgets.QPushButton("💾 保存结果")
@@ -262,21 +279,30 @@ class FusedImageTool(QtWidgets.QWidget):
             btn_layout.addWidget(btn)
         left_layout.addLayout(btn_layout)
         
-        # ---------------- 视图控制栏 ----------------
+        # ---------------- 视图控制矩阵 ----------------
         zoom_layout = QHBoxLayout()
         zoom_layout.addWidget(QtWidgets.QLabel("视图控制:"))
+        
+        self.btn_sync_toggle = QtWidgets.QPushButton("🔗 同步操控: 开启")
+        self.btn_sync_toggle.setStyleSheet("color: #2E8B57; font-weight: bold;")
+        
         btn_zoom_in = QtWidgets.QPushButton("🔍 放大")
         btn_zoom_out = QtWidgets.QPushButton("🔎 缩小")
         btn_zoom_fit = QtWidgets.QPushButton("🖥️ 适应窗口")
+        btn_zoom_11 = QtWidgets.QPushButton("🖼️ 图像原始大小")
+        
+        self.btn_sync_toggle.clicked.connect(self.toggle_sync_mode)
         btn_zoom_in.clicked.connect(lambda: self.zoom_views(1.2))
         btn_zoom_out.clicked.connect(lambda: self.zoom_views(1 / 1.2))
         btn_zoom_fit.clicked.connect(self.fit_views)
+        btn_zoom_11.clicked.connect(self.actual_size_views)
         
-        zoom_layout.addWidget(btn_zoom_in); zoom_layout.addWidget(btn_zoom_out); zoom_layout.addWidget(btn_zoom_fit)
+        for btn in[self.btn_sync_toggle, btn_zoom_in, btn_zoom_out, btn_zoom_fit, btn_zoom_11]:
+            zoom_layout.addWidget(btn)
         zoom_layout.addStretch()
         left_layout.addLayout(zoom_layout)
         
-        # ---------------- 图像显示对比区 ----------------
+        # ---------------- 图像渲染视窗 ----------------
         display_layout = QHBoxLayout()
         grp_orig = QGroupBox("当前原图 (基准)")
         lay_orig = QVBoxLayout(); self.view_orig = SyncGraphicsView(); lay_orig.addWidget(self.view_orig); grp_orig.setLayout(lay_orig)
@@ -284,20 +310,24 @@ class FusedImageTool(QtWidgets.QWidget):
         grp_proc = QGroupBox("处理结果")
         lay_proc = QVBoxLayout(); self.view_proc = SyncGraphicsView(); lay_proc.addWidget(self.view_proc); grp_proc.setLayout(lay_proc)
         
-        display_layout.addWidget(grp_orig); display_layout.addWidget(grp_proc)
+        # 通过设置 stretch=1，强制左右两个 GroupBox 平均瓜分显示区域，彻底杜绝尺寸挤占现象
+        display_layout.addWidget(grp_orig, 1)
+        display_layout.addWidget(grp_proc, 1)
         left_layout.addLayout(display_layout)
         
-        # 滚动条同步联动
-        self.view_orig.horizontalScrollBar().valueChanged.connect(self.view_proc.horizontalScrollBar().setValue)
-        self.view_proc.horizontalScrollBar().valueChanged.connect(self.view_orig.horizontalScrollBar().setValue)
-        self.view_orig.verticalScrollBar().valueChanged.connect(self.view_proc.verticalScrollBar().setValue)
-        self.view_proc.verticalScrollBar().valueChanged.connect(self.view_orig.verticalScrollBar().setValue)
+        self.view_orig.viewClicked.connect(self.on_view_clicked)
+        self.view_proc.viewClicked.connect(self.on_view_clicked)
+        
+        self.view_orig.horizontalScrollBar().valueChanged.connect(self.on_hscroll_orig)
+        self.view_proc.horizontalScrollBar().valueChanged.connect(self.on_hscroll_proc)
+        self.view_orig.verticalScrollBar().valueChanged.connect(self.on_vscroll_orig)
+        self.view_proc.verticalScrollBar().valueChanged.connect(self.on_vscroll_proc)
         
         btn_compare_hist = QtWidgets.QPushButton("📊 显示直方图面板")
         btn_compare_hist.clicked.connect(self.on_compare_hist)
         left_layout.addWidget(btn_compare_hist)
         
-        # ---------------- 右侧功能区配置 ----------------
+        # ---------------- 算法算子配置区 ----------------
         right_layout = QVBoxLayout()
         tabs = QTabWidget(); tabs.setFixedWidth(360)
         
@@ -306,7 +336,7 @@ class FusedImageTool(QtWidgets.QWidget):
             btn.clicked.connect(callback)
             return btn
 
-        # [功能组 1: 亮度与对比度增强]
+        # [模块 1: 直方图与亮度映射]
         tab1 = QtWidgets.QWidget(); lay1 = QVBoxLayout(tab1)
         lay1.addWidget(QtWidgets.QLabel("<b>直方图处理</b>"))
         btn_eq = QtWidgets.QPushButton("全局直方图均衡化"); btn_clahe = QtWidgets.QPushButton("CLAHE 局部均衡化")
@@ -334,7 +364,7 @@ class FusedImageTool(QtWidgets.QWidget):
         lay1.addWidget(create_reset_btn(reset_t1))
         tabs.addTab(tab1, "亮度增强")
         
-        #[功能组 2: 几何空间变换]
+        #[模块 2: 空间几何变换]
         tab2 = QtWidgets.QWidget(); lay2 = QVBoxLayout(tab2)
         self.chk_flip_h = QtWidgets.QCheckBox("水平镜像 (左右翻转)")
         self.chk_flip_v = QtWidgets.QCheckBox("垂直镜像 (上下翻转)")
@@ -358,7 +388,7 @@ class FusedImageTool(QtWidgets.QWidget):
         lay2.addWidget(create_reset_btn(reset_t2))
         tabs.addTab(tab2, "几何变换")
         
-        #[功能组 3: 空间域复原与滤波]
+        # [模块 3: 图像复原与空域滤波]
         tab3 = QtWidgets.QWidget(); lay3 = QVBoxLayout(tab3)
         self.combo_noise = QtWidgets.QComboBox()
         self.combo_noise.addItems(['高斯噪声 (gaussian)', '椒盐噪声 (salt_pepper)', '斑点噪声 (speckle)', '泊松噪声 (poisson)'])
@@ -386,7 +416,7 @@ class FusedImageTool(QtWidgets.QWidget):
         lay3.addWidget(create_reset_btn(reset_t3))
         tabs.addTab(tab3, "加噪与空域")
         
-        #[功能组 4: 频率域增强]
+        #[模块 4: 频率域增强]
         tab4 = QtWidgets.QWidget(); lay4 = QVBoxLayout(tab4)
         self.combo_freq_mode = QtWidgets.QComboBox(); self.combo_freq_mode.addItems(['低通滤波 (lowpass)', '高通滤波 (highpass)'])
         self.combo_freq_type = QtWidgets.QComboBox(); self.combo_freq_type.addItems(['理想滤波 (ideal)', '高斯滤波 (gaussian)', '巴特沃斯滤波 (butterworth)'])
@@ -413,10 +443,99 @@ class FusedImageTool(QtWidgets.QWidget):
         main_layout.addLayout(left_layout, stretch=3)
         main_layout.addLayout(right_layout, stretch=1)
 
-    # ==================== 槽函数与交互逻辑 ====================
+    # ==================== 视图架构与事件分发引擎 ====================
+
+    def toggle_sync_mode(self):
+        """控制同步模式标志位及按钮 CSS 反馈状态"""
+        self.sync_mode = not self.sync_mode
+        if self.sync_mode:
+            self.btn_sync_toggle.setText("🔗 同步操控: 开启")
+            self.btn_sync_toggle.setStyleSheet("color: #2E8B57; font-weight: bold;")
+            self.view_orig.setStyleSheet("border: 2px solid transparent; background-color: #2e2e2e;")
+            self.view_proc.setStyleSheet("border: 2px solid transparent; background-color: #2e2e2e;")
+            
+            # 进入同步模式时，强制将另一侧视口位置映射至当前焦点视口
+            target_view = self.view_proc if self.active_view == self.view_orig else self.view_orig
+            target_view.setTransform(self.active_view.transform())
+            target_view.horizontalScrollBar().setValue(self.active_view.horizontalScrollBar().value())
+            target_view.verticalScrollBar().setValue(self.active_view.verticalScrollBar().value())
+        else:
+            self.btn_sync_toggle.setText("🔓 同步操控: 关闭")
+            self.btn_sync_toggle.setStyleSheet("color: #D2691E; font-weight: bold;")
+            self.update_active_view_style()
+
+    def on_view_clicked(self, view):
+        """鼠标左键焦点拦截机制"""
+        if not self.sync_mode:
+            self.active_view = view
+            self.update_active_view_style()
+
+    def update_active_view_style(self):
+        """独立操控模式下的高亮绘制器"""
+        if self.sync_mode: return
+        style_active = "border: 2px solid #00AAFF; background-color: #2e2e2e;"
+        style_inactive = "border: 2px solid transparent; background-color: #2e2e2e;"
+        if self.active_view == self.view_orig:
+            self.view_orig.setStyleSheet(style_active)
+            self.view_proc.setStyleSheet(style_inactive)
+        else:
+            self.view_orig.setStyleSheet(style_inactive)
+            self.view_proc.setStyleSheet(style_active)
+
+    def on_hscroll_orig(self, val):
+        if self.sync_mode and not self.is_syncing_scroll:
+            self.is_syncing_scroll = True
+            self.view_proc.horizontalScrollBar().setValue(val)
+            self.is_syncing_scroll = False
+
+    def on_hscroll_proc(self, val):
+        if self.sync_mode and not self.is_syncing_scroll:
+            self.is_syncing_scroll = True
+            self.view_orig.horizontalScrollBar().setValue(val)
+            self.is_syncing_scroll = False
+
+    def on_vscroll_orig(self, val):
+        if self.sync_mode and not self.is_syncing_scroll:
+            self.is_syncing_scroll = True
+            self.view_proc.verticalScrollBar().setValue(val)
+            self.is_syncing_scroll = False
+
+    def on_vscroll_proc(self, val):
+        if self.sync_mode and not self.is_syncing_scroll:
+            self.is_syncing_scroll = True
+            self.view_orig.verticalScrollBar().setValue(val)
+            self.is_syncing_scroll = False
+
+    def zoom_views(self, factor):
+        """缩放引擎。根据模式标识实施双路或单路派发。"""
+        if self.sync_mode:
+            self.view_orig.scale(factor, factor)
+            self.view_proc.scale(factor, factor)
+        else:
+            self.active_view.scale(factor, factor)
+
+    def fit_views(self):
+        """全图适配引擎。调用底层 SceneRect 进行边界计算。"""
+        if self.sync_mode:
+            if self.img_base is not None: self.view_orig.fitInView(self.view_orig.sceneRect(), QtCore.Qt.KeepAspectRatio)
+            if self.img_proc is not None: self.view_proc.fitInView(self.view_proc.sceneRect(), QtCore.Qt.KeepAspectRatio)
+        else:
+            if self.active_view == self.view_orig and self.img_base is not None:
+                self.view_orig.fitInView(self.view_orig.sceneRect(), QtCore.Qt.KeepAspectRatio)
+            elif self.active_view == self.view_proc and self.img_proc is not None:
+                self.view_proc.fitInView(self.view_proc.sceneRect(), QtCore.Qt.KeepAspectRatio)
+
+    def actual_size_views(self):
+        """原始比率引擎。重置 QGraphicsView 的内部仿射矩阵至恒等映射。"""
+        if self.sync_mode:
+            self.view_orig.resetTransform()
+            self.view_proc.resetTransform()
+        else:
+            self.active_view.resetTransform()
+
+    # ==================== 接口与参数通信 ====================
 
     def on_noise_type_changed(self, index):
-        """动态修正各类噪声的输入参数标签。"""
         text = self.combo_noise.currentText()
         if "gaussian" in text:
             self.lbl_noise_param.setText("高斯方差 Var (数值越大噪声越强):")
@@ -432,7 +551,6 @@ class FusedImageTool(QtWidgets.QWidget):
             self.spin_var.setEnabled(False)
 
     def on_freq_type_changed(self, index):
-        """控制频域滤波器特有参数（如巴特沃斯滤波器的阶数）的可用性。"""
         text = self.combo_freq_type.currentText()
         if "butterworth" in text:
             self.lbl_freq_order.setText("阶数 (仅限巴特沃斯滤波器):")
@@ -441,19 +559,7 @@ class FusedImageTool(QtWidgets.QWidget):
             self.lbl_freq_order.setText("阶数 (当前滤波器无需此参数):")
             self.spin_order.setEnabled(False)
 
-    def zoom_views(self, factor):
-        """视图联动缩放。"""
-        self.view_orig.scale(factor, factor)
-        self.view_proc.scale(factor, factor)
-
-    def fit_views(self):
-        """重置视图缩放并使其自适应当前窗口大小。"""
-        if self.img_base is not None:
-            self.view_orig.fitInView(self.view_orig.sceneRect(), QtCore.Qt.KeepAspectRatio)
-            self.view_proc.fitInView(self.view_proc.sceneRect(), QtCore.Qt.KeepAspectRatio)
-
     def load_image(self):
-        """支持中文路径的图像加载逻辑。"""
         path, _ = QFileDialog.getOpenFileName(self, "打开图像", "", "Images (*.png *.jpg *.jpeg *.bmp *.tif)")
         if path:
             img = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
@@ -468,7 +574,6 @@ class FusedImageTool(QtWidgets.QWidget):
             QtCore.QTimer.singleShot(100, self.fit_views)
 
     def save_image(self):
-        """包含画质预设及 DPI 写入的保存逻辑。"""
         if self.img_proc is None:
             QMessageBox.information(self, "提示", "目前没有处理结果可保存！")
             return
@@ -489,7 +594,6 @@ class FusedImageTool(QtWidgets.QWidget):
                     QMessageBox.warning(self, "保存失败", str(e))
 
     def set_as_original(self):
-        """历史栈操作：将当前处理结果入栈并设为新的处理起点。"""
         if self.img_proc is not None:
             self.history.append(self.img_base.copy())
             self.img_base = self.img_proc.copy()
@@ -497,7 +601,6 @@ class FusedImageTool(QtWidgets.QWidget):
             self.update_views()
 
     def undo_history(self):
-        """历史栈操作：出栈并恢复上一个状态。"""
         if len(self.history) > 0:
             self.img_base = self.history.pop()
             self.img_proc = None
@@ -506,7 +609,6 @@ class FusedImageTool(QtWidgets.QWidget):
             QMessageBox.information(self, "提示", "已到达历史记录尽头，无法继续撤销。")
 
     def reset_to_first(self):
-        """清空历史栈并重置为首次加载的图像。"""
         if self.img_first_loaded is not None:
             self.history.clear()
             self.img_base = self.img_first_loaded.copy()
@@ -515,7 +617,6 @@ class FusedImageTool(QtWidgets.QWidget):
             self.fit_views()
 
     def apply_filter(self, func):
-        """通用滤波器应用接口，保证所有操作均施加于基准图像上。"""
         if self.img_base is None:
             QMessageBox.information(self, "提示", "请先加载图像！")
             return
@@ -523,7 +624,6 @@ class FusedImageTool(QtWidgets.QWidget):
         self.update_views()
 
     def update_views(self):
-        """刷新双侧图像显示区。"""
         if self.img_base is not None:
             self.view_orig.set_image(QtGui.QPixmap.fromImage(cv2_to_qimage(self.img_base)))
         if self.img_proc is not None:
@@ -534,15 +634,12 @@ class FusedImageTool(QtWidgets.QWidget):
             self.view_proc.scene.addItem(self.view_proc.pixmap_item)
 
     def on_compare_hist(self):
-        """调用 Matplotlib 对比显示直方图。"""
         if self.img_base is None: return
         proc = self.img_proc if self.img_proc is not None else self.img_base
         show_histograms_comparision(self.img_base, proc)
 
     def on_geo(self):
-        """解析几何变换参数 (包含智能画布边界扩展)"""
         def _geo(img):
-            # 1. 镜像操作
             if self.chk_flip_h.isChecked(): img = cv2.flip(img, 1)
             if self.chk_flip_v.isChecked(): img = cv2.flip(img, 0)
             
@@ -550,29 +647,20 @@ class FusedImageTool(QtWidgets.QWidget):
             tx, ty = self.spin_tx.value(), self.spin_ty.value()
             
             h, w = img.shape[:2]
-            
-            # 2. 获取基于原图中心的初始仿射矩阵
             M = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), deg, sc)
             
-            # 3. 计算旋转后包围盒 (Bounding Box) 的新宽度和新高度
             cos_a = np.abs(M[0, 0])
             sin_a = np.abs(M[0, 1])
             new_w = int((h * sin_a) + (w * cos_a))
             new_h = int((h * cos_a) + (w * sin_a))
             
-            # 4. 调整仿射矩阵的平移部分，使图像保持在新画布正中心，并叠加用户的手动平移
             M[0, 2] += (new_w / 2.0) - (w / 2.0) + tx
             M[1, 2] += (new_h / 2.0) - (h / 2.0) + ty
             
-            # 5. 执行变换，传入新的自适应尺寸
-            return cv2.warpAffine(img, M, (new_w, new_h), 
-                                  flags=cv2.INTER_LINEAR, 
-                                  borderMode=cv2.BORDER_CONSTANT, 
-                                  borderValue=(0, 0, 0))
+            return cv2.warpAffine(img, M, (new_w, new_h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
         self.apply_filter(_geo)
 
     def on_noise(self):
-        """解析空间加噪参数。"""
         text = self.combo_noise.currentText()
         mode = text.split('(')[-1].strip(')')
         var = self.spin_var.value()
@@ -580,7 +668,6 @@ class FusedImageTool(QtWidgets.QWidget):
         self.apply_filter(lambda x: add_noise(x, mode=mode, var=var, amount=amount))
 
     def on_spat(self):
-        """解析空间域滤波器参数。"""
         text = self.combo_spat.currentText()
         k = self.spin_ks.value()
         if k % 2 == 0: k += 1
@@ -592,18 +679,15 @@ class FusedImageTool(QtWidgets.QWidget):
         self.apply_filter(_spat)
 
     def on_freq(self):
-        """解析频率域滤波器参数。"""
         mode_str = self.combo_freq_mode.currentText()
         mode = 'lowpass' if 'lowpass' in mode_str else 'highpass'
         ftype = self.combo_freq_type.currentText().split('(')[-1].strip(')')
         self.apply_filter(lambda x: frequency_filter(x, mode=mode, ftype=ftype, cutoff=self.spin_cut.value(), order=self.spin_order.value()))
 
 if __name__ == "__main__":
-    # 强制适配高分屏缩放
     QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
     app = QtWidgets.QApplication(sys.argv)
     
-    # 强制全局应用微软雅黑字体
     font = QtGui.QFont("Microsoft YaHei", 10)
     app.setFont(font)
     
