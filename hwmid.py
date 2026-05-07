@@ -80,6 +80,15 @@ def show_histograms_comparision(img_orig, img_proc, title1="原图直方图 (Ori
     plt.tight_layout()
     plt.show()
 
+def to_grayscale(img):
+    """
+    色彩空间转换：彩色图像转为灰度图像。
+    基于加权平均法提取明度信息。为后续诸多仅针对单通道灰度矩阵的算法提供输入基础。
+    """
+    if img.ndim == 3:
+        return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    return img.copy()
+
 def histogram_equalize(img):
     """
     全局直方图均衡化。对应《数字图像处理（第四版）》3.3.1节。
@@ -289,7 +298,7 @@ class FusedImageTool(QtWidgets.QWidget):
         btn_zoom_in = QtWidgets.QPushButton("🔍 放大")
         btn_zoom_out = QtWidgets.QPushButton("🔎 缩小")
         btn_zoom_fit = QtWidgets.QPushButton("🖥️ 适应窗口")
-        btn_zoom_11 = QtWidgets.QPushButton("🖼️ 图像原始大小")
+        btn_zoom_11 = QtWidgets.QPushButton("🖼️ 1:1 原始大小")
         
         self.btn_sync_toggle.clicked.connect(self.toggle_sync_mode)
         btn_zoom_in.clicked.connect(lambda: self.zoom_views(1.2))
@@ -310,7 +319,6 @@ class FusedImageTool(QtWidgets.QWidget):
         grp_proc = QGroupBox("处理结果")
         lay_proc = QVBoxLayout(); self.view_proc = SyncGraphicsView(); lay_proc.addWidget(self.view_proc); grp_proc.setLayout(lay_proc)
         
-        # 通过设置 stretch=1，强制左右两个 GroupBox 平均分配显示区域，彻底杜绝尺寸挤占现象
         display_layout.addWidget(grp_orig, 1)
         display_layout.addWidget(grp_proc, 1)
         left_layout.addLayout(display_layout)
@@ -336,9 +344,15 @@ class FusedImageTool(QtWidgets.QWidget):
             btn.clicked.connect(callback)
             return btn
 
-        # [模块 1: 直方图与亮度映射]
+        #[功能组 1: 亮度与对比度增强]
         tab1 = QtWidgets.QWidget(); lay1 = QVBoxLayout(tab1)
-        lay1.addWidget(QtWidgets.QLabel("<b>直方图处理</b>"))
+        
+        lay1.addWidget(QtWidgets.QLabel("<b>色彩空间转换</b>"))
+        btn_gray = QtWidgets.QPushButton("转换为单通道灰度图像")
+        btn_gray.clicked.connect(lambda: self.apply_filter(to_grayscale))
+        lay1.addWidget(btn_gray)
+        
+        lay1.addWidget(QtWidgets.QLabel("<hr><b>直方图处理</b>"))
         btn_eq = QtWidgets.QPushButton("全局直方图均衡化"); btn_clahe = QtWidgets.QPushButton("CLAHE 局部均衡化")
         btn_eq.clicked.connect(lambda: self.apply_filter(histogram_equalize))
         btn_clahe.clicked.connect(lambda: self.apply_filter(lambda x: clahe_enhance(x, 2.0)))
@@ -364,7 +378,7 @@ class FusedImageTool(QtWidgets.QWidget):
         lay1.addWidget(create_reset_btn(reset_t1))
         tabs.addTab(tab1, "亮度增强")
         
-        #[模块 2: 空间几何变换]
+        #[功能组 2: 几何空间变换]
         tab2 = QtWidgets.QWidget(); lay2 = QVBoxLayout(tab2)
         self.chk_flip_h = QtWidgets.QCheckBox("水平镜像 (左右翻转)")
         self.chk_flip_v = QtWidgets.QCheckBox("垂直镜像 (上下翻转)")
@@ -388,7 +402,7 @@ class FusedImageTool(QtWidgets.QWidget):
         lay2.addWidget(create_reset_btn(reset_t2))
         tabs.addTab(tab2, "几何变换")
         
-        # [模块 3: 图像复原与空域滤波]
+        #[功能组 3: 空间域复原与滤波]
         tab3 = QtWidgets.QWidget(); lay3 = QVBoxLayout(tab3)
         self.combo_noise = QtWidgets.QComboBox()
         self.combo_noise.addItems(['高斯噪声 (gaussian)', '椒盐噪声 (salt_pepper)', '斑点噪声 (speckle)', '泊松噪声 (poisson)'])
@@ -416,7 +430,7 @@ class FusedImageTool(QtWidgets.QWidget):
         lay3.addWidget(create_reset_btn(reset_t3))
         tabs.addTab(tab3, "加噪与空域")
         
-        #[模块 4: 频率域增强]
+        #[功能组 4: 频率域增强]
         tab4 = QtWidgets.QWidget(); lay4 = QVBoxLayout(tab4)
         self.combo_freq_mode = QtWidgets.QComboBox(); self.combo_freq_mode.addItems(['低通滤波 (lowpass)', '高通滤波 (highpass)'])
         self.combo_freq_type = QtWidgets.QComboBox(); self.combo_freq_type.addItems(['理想滤波 (ideal)', '高斯滤波 (gaussian)', '巴特沃斯滤波 (butterworth)'])
@@ -454,7 +468,6 @@ class FusedImageTool(QtWidgets.QWidget):
             self.view_orig.setStyleSheet("border: 2px solid transparent; background-color: #2e2e2e;")
             self.view_proc.setStyleSheet("border: 2px solid transparent; background-color: #2e2e2e;")
             
-            # 进入同步模式时，强制将另一侧视口位置映射至当前焦点视口
             target_view = self.view_proc if self.active_view == self.view_orig else self.view_orig
             target_view.setTransform(self.active_view.transform())
             target_view.horizontalScrollBar().setValue(self.active_view.horizontalScrollBar().value())
